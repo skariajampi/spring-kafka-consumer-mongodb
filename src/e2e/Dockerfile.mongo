@@ -1,0 +1,11 @@
+FROM mongo:6.0.16
+
+COPY cert/ca.crt /certs/ca.crt
+COPY cert/primary.pem /certs/primary.pem
+COPY cert/replica1.pem /certs/replica1.pem
+COPY cert/replica2.pem /certs/replica2.pem
+
+RUN chmod 640 /certs/ca.crt
+RUN chmod 640 /certs/*.pem
+
+RUN chown -R mongodb:mongodb /certs

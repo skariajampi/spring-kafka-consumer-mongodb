@@ -1,0 +1,201 @@
+version: '3.9'
+
+services:
+  broker:
+    # Apple M1 Chip
+    # platform: linux/amd64
+    image: confluentinc/cp-kafka:7.5.1
+    container_name: broker
+    hostname: broker
+    restart: always
+    env_file:
+      - .env
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: broker
+      KAFKA_JMX_OPTS: -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=broker -Dcom.sun.management.jmxremote.rmi.port=9101
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:29093
+      KAFKA_LISTENERS: PLAINTEXT://broker:29092,CONTROLLER://broker:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Replace CLUSTER_ID with a unique base64 UUID using "bin/kafka-storage.sh random-uuid"
+      # See https://docs.confluent.io/kafka/operations-tools/kafka-tools.html#kafka-storage-sh
+      CLUSTER_ID: $CLUSTER_ID
+    ports:
+      - 9092:9092
+      - 9101:9101
+    volumes:
+      - broker_logdir:/var/lib/kafka/data
+    networks:
+      - kafka-network
+
+
+  init-kafka:
+    # Apple M1 Chip
+    # platform: linux/amd64
+    image: confluentinc/cp-kafka:7.5.1
+    entrypoint: ['/bin/sh', '-c']
+    depends_on:
+      - broker
+    command: |
+      "
+      kafka-topics --bootstrap-server broker:29092 --list
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic some-record-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic process-some-record-command-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic update-person-command-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic add-list-command-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic some-record-enriched-event-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic person-updated-event-topic --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic list-added-event-topic --replication-factor 1 --partitions 3
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server broker:29092 --list
+      "
+    networks:
+      - kafka-network
+  kafka-ui:
+    # Apple M1 Chip
+    # platform: linux/amd64
+    image: provectuslabs/kafka-ui:master
+    # image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:29092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9101
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: kafka-connect-cluster
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+      KAFKA_CLUSTERS_0_KSQLDBSERVER: http://ksqldb-server:8088
+    ports:
+      - 8888:8080
+    volumes:
+      #- /tmp/config.yml:/etc/kafkaui/dynamic_config.yaml
+      - kafkaui_dir:/etc/kafkaui
+    networks:
+      - kafka-network
+    depends_on:
+      - broker
+      - mongo-setup
+
+  replica1.mongodb.local:
+    container_name: replica1.mongodb.local
+    hostname: replica1.mongodb.local
+    build:
+      context: .
+      dockerfile: Dockerfile.mongo
+    ports:
+      - 27018:27017
+    restart: unless-stopped
+    command: "mongod --bind_ip_all --replSet rs0 --journal --tlsMode requireTLS --tlsCertificateKeyFile /certs/replica1.pem --tlsCAFile /certs/ca.crt"
+    volumes:
+      - "mongo-replica-1_data:/data/db"
+      - "mongo-replica-1_config:/data/configdb"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      kafka-network:
+
+  replica2.mongodb.local:
+    container_name: replica2.mongodb.local
+    hostname: replica2.mongodb.local
+    build:
+      context: .
+      dockerfile: Dockerfile.mongo
+    ports:
+      - 27019:27017
+    restart: unless-stopped
+    command: "mongod --bind_ip_all --replSet rs0 --journal --tlsMode requireTLS --tlsCertificateKeyFile /certs/replica2.pem --tlsCAFile /certs/ca.crt"
+    volumes:
+      - "mongo-replica-2_data:/data/db"
+      - "mongo-replica-2_config:/data/configdb"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      kafka-network:
+
+  primary.mongodb.local:
+    container_name: primary.mongodb.local
+    hostname: primary.mongodb.local
+    build:
+      context: .
+      dockerfile: Dockerfile.mongo
+    depends_on:
+      - replica1.mongodb.local
+      - replica2.mongodb.local
+    expose:
+      - 27017
+    ports:
+      - 27017:27017
+    restart: unless-stopped
+    links:
+      - replica1.mongodb.local
+      - replica2.mongodb.local
+    healthcheck:
+      test: mongosh --host primary.mongodb.local --tls --tlsCAFile /certs/ca.crt --tlsCertificateKeyFile /certs/primary.pem 
+        --eval "try { rs.status() } catch (err) { rs.initiate({_id:'rs0', members:[{_id:0, host:'primary.mongodb.local:27017', priority:1},{_id:1, host:'replica1.mongodb.local:27017', priority:0.5},{_id:2, host:'replica2.mongodb.local:27017', priority:0.5}]})}" | mongosh --host primary.mongodb.local --tls --tlsCAFile /certs/ca.crt --tlsCertificateKeyFile /certs/primary.pem --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      retries: 30
+    command: "mongod --bind_ip_all --replSet rs0 --journal --tlsMode requireTLS --tlsCertificateKeyFile /certs/primary.pem --tlsCAFile /certs/ca.crt"
+    volumes:
+      - "mongo-primary_data:/data/db"
+      - "mongo-primary_config:/data/configdb"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      kafka-network:
+
+  mongo-setup:
+    container_name: mongo-setup
+    hostname: mongo-setup
+    build:
+      context: .
+      dockerfile: Dockerfile.mongo
+    depends_on:
+      primary.mongodb.local:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - "./mongo-init.sh:/scripts/mongo-init.sh"
+    entrypoint: ["/bin/bash", "/scripts/mongo-init.sh"]
+    networks:
+      - kafka-network
+
+
+networks:
+  kafka-network:
+    driver: bridge
+
+volumes:
+  broker_logdir:
+  kafkaui_dir:
+  flink_data:
+  mongo-primary_data:
+  mongo-primary_config:
+  mongo-replica-1_data:
+  mongo-replica-1_config:
+  mongo-replica-2_data:
+  mongo-replica-2_config:
+
