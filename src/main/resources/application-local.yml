@@ -1,0 +1,19 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+  data:
+    mongodb:
+      uri: "mongodb://localhost:27017"
+      username:
+      password:
+
+mongodb-config:
+  mongodb-ssl-keystore: "src/main/resources/localcert/localmongo.jks"
+  mongodb-ssl-keystore-password: "mongo123"
+  mongodb-ssl-truststore: "src/main/resources/localcert/localmongo.jks"
+  mongodb-ssl-truststore-password: "mongo123"
+
+logging:
+  level:
+    root: info
+    

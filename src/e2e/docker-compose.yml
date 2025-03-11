@@ -39,7 +39,6 @@ services:
     networks:
       - kafka-network
 
-
   init-kafka:
     # Apple M1 Chip
     # platform: linux/amd64

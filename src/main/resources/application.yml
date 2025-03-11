@@ -1,56 +1,59 @@
 spring:
-  profiles:
-    active: local
-server:
-  port: 8081
-
-topics:
-  retry: library-events.RETRY
-  dead-letter: library-events.DLT
-
----
-spring:
-  config:
-    activate:
-      on-profile: local
-
+  main:
+    banner-mode: off
   kafka:
-    template:
-      default-topic: library-events
+    #template:
+      #default-topic: library-events
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
     consumer:
-      bootstrap-servers: localhost:9093, localhost:9094, localhost:9095
-      key-deserializer: org.apache.kafka.common.serialization.IntegerDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      group-id: library-events-listener-group
+      bootstrap-servers: localhost:9092
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      group-id: mongodb-ingest-group-20250310
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      isolation-level: read_committed
+      properties:
+        fetch.max.bytes: 5242880
+        spring.deserializer.value.delegate.class: com.skaria.kafka.mongodb.springboot.examples.serde.SomeListDeserializer
+        spring.json.trusted.packages: com.skaria.model.inbound.SomeList
+        retries:
+          max: 3
+          initialInterval: 1000
+          interval: 1000
+          backoffMultiplier: 2
     producer:
-      bootstrap-servers: localhost:9093, localhost:9094, localhost:9095
-      key-serializer: org.apache.kafka.common.serialization.IntegerSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      bootstrap-servers: localhost:9092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: com.skaria.kafka.mongodb.springboot.examples.serde.SomeListSerializer
+      acks: all
+      retries: 5
+      properties:
+        enable.idempotence: true
+        linger.ms: 100
+        request.timeout.ms: 5000
+        send.wait.timeout.ms: 2000
+        delivery.timeout.ms: 7000
+        max.request.size: '3145728'
 
-  datasource:
-    url: jdbc:h2:mem:testdb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: sa
-  jpa:
-    database: h2
-    database-platform: org.hibernate.dialect.H2Dialect
-    generate-ddl: true
-  h2:
-    console:
-      enabled: true
+    topic:
+      source-topic: somelist-topic
 
----
-spring:
-  config:
-    activate:
-      on-profile: prod
+  data:
+    mongodb:
+      uri: "mongodb://mongodb-replica-set-svc.mongodb.svc.cluster.local/admin?replicaSet=mongodb-replica-set&ssl=true"
+      username: ${MONGODB_USERNAME}
+      password: ${MONGODB_PASSWORD}
+      database: somelist
 
-  kafka:
-    template:
-      default-topic: library-events
-    consumer:
-      bootstrap-servers: localhost:9093, localhost:9094, localhost:9095
-      key-deserializer: org.apache.kafka.common.serialization.IntegerSerializer
-      value-deserializer: org.apache.kafka.common.serialization.StringSerializer
-      group-id: library-events-listener-group
+mongodb-config:
+  mongodb-ssl-keystore: "${JKS_PATH}"
+  mongodb-ssl-keystore-password: "${JKS_PASSWORD}"
+  mongodb-ssl-truststore: "${JKS_PATH}"
+  mongodb-ssl-truststore-password: "${JKS_PASSWORD}"
+
+logging:
+  level:
+    root: info
