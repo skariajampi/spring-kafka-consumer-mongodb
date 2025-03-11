@@ -25,7 +25,7 @@ public class KafkaSomeListDataListenerService {
                                     Acknowledgment ack,
                                     @Header(value = KafkaHeaders.DELIVERY_ATTEMPT, required = false) Integer attempt) {
         try {
-            System.out.println(record.value());
+            log.info(record.value().toString());
             ack.acknowledge();
         } catch (Exception e) {
             log.error("delivery attempt # {} due to error {} ", attempt, e.getMessage());
