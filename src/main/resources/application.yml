@@ -57,3 +57,8 @@ mongodb-config:
 logging:
   level:
     root: info
+    com.skaria: info
+    org.springframework.boot: info
+    org.springframework.kafka: info
+    org.springframework.data: info
+
